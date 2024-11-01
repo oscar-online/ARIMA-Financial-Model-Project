@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+
+
+<html>
+    <head>
+        <title>ARIMA FLASK APP</title>
+    </head>
+    <body>
+        <h1> 
+            Fitting and Backtesting ARIMA(p,d,q) Models
+        </h1>
+        <form method="post">
+            Ticker: <input type="text" name="ticker" required><br>
+            Start Date: <input type="date" name="start" required><br>
+            End Date: <input type="date" name="end" required><br>
+            <input type="submit" value="Plot">
+        </form>
+        {% if plot_url %}
+            <h2>Stock Price and Returns for {{ request.form['ticker'] }}</h2>
+            <img src="data:image/png;base64,{{ plot_url }}" alt="Stock Plot">
+        {% endif %} 
+    </body>
+
+
+
+
+</html>
