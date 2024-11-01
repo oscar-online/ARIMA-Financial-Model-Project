@@ -20,3 +20,5 @@ TradeBot.ipynb is my central workbook, with ModelSelection.ipynb and StrategyImp
 
 script contains the raw code from all my work thus far in Python
 
+Emissions Vs Pricing VAR.ipynb is an exploratory project into implementing Vector Autoregressive Models to my framework
+
