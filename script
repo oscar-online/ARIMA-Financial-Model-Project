@@ -1,0 +1,231 @@
+from tabulate import tabulate
+import matplotlib.pyplot as plt
+import yfinance as yf
+import matplotlib.dates as mdates
+from datetime import datetime, timedelta
+
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tools.sm_exceptions import ValueWarning, HessianInversionWarning, ConvergenceWarning
+from statsmodels.tsa.api import VAR
+
+import numpy as np
+import seaborn as sns
+import pandas as pd
+from tqdm import tqdm
+
+
+import warnings
+warnings.simplefilter('ignore', ValueWarning)
+warnings.simplefilter('ignore', HessianInversionWarning)
+warnings.simplefilter('ignore', ConvergenceWarning)
+
+sns.set_theme()
+
+
+
+
+#label our ticker and collect historical data
+tickerSymbol = 'USO'
+
+data = yf.Ticker(tickerSymbol)
+#collect prices and returns
+prices = data.history(start='2023-01-01', end='2024-10-26').Close
+returns = prices.pct_change().dropna()
+#plot results
+fig, ax1 = plt.subplots(2, 1, figsize=(12,8), sharex = True)
+ax1[0].plot(prices.index, prices, label='Price', color='blue')
+ax1[0].set_title(f'Daily Close: Price {tickerSymbol}')
+ax1[0].set_ylabel('Price ($)')
+ax1[0].legend(loc='upper left')
+ax1[0].grid()
+
+ax1[1].plot(returns.index, returns, label='Returns', color='orange')
+ax1[1].set_title('First Order Difference (Returns)')
+ax1[1].set_ylabel('Returns')
+ax1[1].set_xlabel('Date')
+ax1[1].axhline(y=0, color = 'black', linestyle = "--")
+ax1[1].legend(loc='upper left')
+ax1[1].grid()
+
+plt.tight_layout()
+plt.show()
+
+
+adf_result = adfuller(returns)
+print("ADF Test Statistic:", adf_result[0])
+print("p-value:", adf_result[1])
+print("Critical Values:")
+for key, value in adf_result[4].items():
+    print(f"   {key}: {value:.3f}")
+
+
+
+
+plot_acf(returns, lags=50)
+plt.title('Autocorrelation Function')
+plt.show()
+
+plot_pacf(returns, lags=40)
+plt.title('Partial Autocorrelation Function')
+plt.show();
+
+
+
+#we choose a model based on our above plots. a typical rule of thumb is to estimate MA order as the lag with the most significant value of ACF, with the same applying to AR order and PACF
+p = 3  # AR order
+q = 3  # MA order
+
+
+#intended for cleaner visual, remove this for diagnostics
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=ValueWarning)
+
+
+
+# Fit the ARMA model
+model = ARIMA(returns, order=(p, 0, q))
+arma_model = model.fit()
+fitted_values = arma_model.fittedvalues
+
+
+
+# Plot the actual data and fitted values together
+plt.figure(figsize=(10,6))
+plt.plot(returns, label='Actual', color='black', lw=2)
+plt.plot(fitted_values, label='Fitted', color='magenta', lw=2)
+plt.title(f'Actual vs Fitted ARMA({p},{q}) Model for ${tickerSymbol}', fontweight = 'bold')
+plt.xlabel('Time')
+plt.ylabel('Values')
+
+plt.legend()
+plt.tight_layout()
+plt.show()
+#fitting Criteria
+print(f'Akaike Information Criterion (AIC) = {arma_model.aic}, Corrected (AICc) = {arma_model.aicc}')
+
+#assuming our model fitting criteria are satisfactory we proceed to test our model
+d=1
+
+#intended for cleaner visual, remove this for diagnostics
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=ValueWarning)
+
+
+
+#fit ARIMA model
+model2 = ARIMA(prices, order=(p, d, q))
+arima_model = model2.fit()
+
+#extract fitted values (in-sample predictions)
+fitted_values = arima_model.fittedvalues
+
+
+
+# Plot the actual data and fitted values together
+plt.figure(figsize=(10,6))
+plt.plot(prices, label='Actual', color='black', lw=2)
+plt.plot(fitted_values[1:], label='Fitted', color='magenta', lw=2)
+plt.title(f'Actual vs Fitted ARIMA({p},{d},{q}) Model for ${tickerSymbol}', fontweight = 'bold')
+plt.xlabel('Time')
+plt.ylabel('Price ($)')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+#this concludes section 1
+
+#we assume the code from our prior section has been implemented
+
+#to get a crude estimation of how predictive our model is, we define a backtesting bot to bet when sufficient returns are forecast
+output_array = []
+def backtest_bot(returns_thresh):
+    #initialize dataframe
+    TRADE_RESULTS = pd.DataFrame(
+        {"TRADE" : [],
+         "Date" : [],
+         "Buy Price ($)" : [],
+         "Sell Price ($)" : [],
+         "Predicted Return (%)" : [],
+         "Realised Return (%)" : [],
+         "Trade Profit ($)" : [],
+         "P/L ($)" : []
+        }
+    )
+    total_profit = 0
+    no_trades = 0
+    #print(f'TRADING STRATEGY: BUY AND SELL FOLLOWING DAY WHEN PREDICTED RETURNS > {returns_thresh*100}% \n----------')
+    for i in range(2, len(fitted_values)-1):
+        #strategy goes here
+        n = (fitted_values[i] - fitted_values[i-1])/fitted_values[i-1]
+        if n > returns_thresh:
+            #this executes the trade
+            no_trades += 1
+            trade_profit = prices[i] - prices[i-1]
+            trade_returns = trade_profit/prices[i-1]
+            total_profit += trade_profit
+            #make a dictionary, for our pandas dataframe to take in
+            trade_dict = {
+                "TRADE" : int(no_trades),
+                "Date" : prices.index[i-1],
+                "Buy Price ($)" : np.round(prices[i-1],2),
+                "Sell Price ($)" : np.round(prices[i],2),
+                "Predicted Return (%)" : np.round(n*100,2),
+                "Realised Return (%)" : np.round(trade_returns*100, 2),
+                "Trade Profit ($)" : np.round(trade_profit,2),
+                "P/L ($)" : np.round(total_profit,2)
+            }
+            #add the dictionary
+            TRADE_RESULTS = pd.concat([TRADE_RESULTS, pd.DataFrame([trade_dict])], ignore_index=True)
+    output_array.append(total_profit)
+            #print(np.round(returns_thresh, 2))
+            #print(output_array)
+    
+
+    
+    
+#format dates for a neater table
+#TRADE_RESULTS['Date'] = pd.to_datetime(TRADE_RESULTS['Date'])
+#TRADE_RESULTS['Date'] = TRADE_RESULTS['Date'].dt.strftime('%m/%d/%y')
+#print(f'TOTAL PROFIT = ${np.round(total_profit,2)}')   
+#temporarily moved, for MC plot  
+#print our table
+#print(tabulate(TRADE_RESULTS, headers="keys", tablefmt="pretty", showindex=False))
+#plot our P/L       
+#plt.figure(figsize=(10,6))
+#plt.plot(TRADE_RESULTS["P/L ($)"], label='P/L ($)', color='green', lw=2)
+#plt.title(f"Profit of our Trading Strategy, using ARIMA({p},{d},{q}), Buy Threshold= {returns_thresh*100}%", fontweight = 'bold')
+#plt.xlabel('Trade Number')
+#plt.axhline(y=0, color = 'red')
+#plt.ylabel(f'($)')
+#plt.legend()
+#plt.tight_layout()
+#plt.show()       
+#backtest_bot(0.0)
+
+import numpy as np
+import pandas as pd
+#mc simulator of different thresholds
+output_array = [0]
+#step one
+def profit_bot(sim_input):
+    backtest_bot(sim_input)
+    return output_array
+
+#step two + three
+sim_num = 1000
+thresh_min = -0.05
+thresh_max = 0.05
+sim_values = np.random.uniform(thresh_min, thresh_max, sim_num)
+MC_sim_results = [profit_bot(returns_thresh) for returns_thresh in sim_values]
+
+#step four
+plt.hist(MC_sim_results[0], bins=100, color = 'purple')
+plt.xlabel('Total Strategy Profit')
+plt.ylabel('Count')
+plt.title('Strategy Monte Carlo Simulation', weight = 'bold')
+plt.show()
