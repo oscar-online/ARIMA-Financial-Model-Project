@@ -1,3 +1,5 @@
+**Outline**
+
 Within this folder is my work towards developing a web app to fit, test and simulate backtested strategies using statistical analysis models.
 
 Considered models will be:
