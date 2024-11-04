@@ -1,0 +1,430 @@
+#import statements
+from tabulate import tabulate
+import matplotlib.pyplot as plt
+import yfinance as yf
+import matplotlib.dates as mdates
+from datetime import datetime, timedelta
+from IPython.display import display, Math, Latex
+
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tools.sm_exceptions import ValueWarning, HessianInversionWarning, ConvergenceWarning
+from statsmodels.tsa.api import VAR
+from arch import arch_model
+
+import numpy as np
+import seaborn as sns
+import pandas as pd
+from tqdm import tqdm
+
+
+import warnings
+warnings.simplefilter('ignore', ValueWarning)
+warnings.simplefilter('ignore', HessianInversionWarning)
+warnings.simplefilter('ignore', ConvergenceWarning)
+
+sns.set_theme()
+
+----
+
+#we now use our code from our arima test to find and plot our returns for a given asset
+
+tickerSymbol = 'USO'
+
+data = yf.Ticker(tickerSymbol)
+#collect prices and returns
+prices = data.history(start='2023-03-15', end='2025-01-01').Close
+returns = prices.pct_change().dropna()
+#plot results
+fig, ax1 = plt.subplots(2, 1, figsize=(12,8), sharex = True)
+ax1[0].plot(prices.index, prices, label='Price', color='blue')
+ax1[0].set_title(f'Daily Close: Price {tickerSymbol}')
+ax1[0].set_ylabel('Price ($)')
+ax1[0].legend(loc='upper left')
+ax1[0].grid()
+
+ax1[1].plot(returns.index, returns, label='Returns', color='orange')
+ax1[1].set_title('First Order Difference (Returns)')
+ax1[1].set_ylabel('Returns')
+ax1[1].set_xlabel('Date')
+ax1[1].axhline(y=0, color = 'black', linestyle = "--")
+ax1[1].legend(loc='upper left')
+ax1[1].grid()
+
+plt.tight_layout()
+plt.show()
+
+
+adf_result = adfuller(returns)
+print("ADF Test Statistic:", adf_result[0])
+print("p-value:", adf_result[1])
+print("Critical Values:")
+for key, value in adf_result[4].items():
+    print(f"   {key}: {value:.3f}")
+
+----
+
+#we seek to model our returns based on the following framework, where our mean process is an ARMA model
+display(Math(r'r_t = \mu_t + \epsilon_t'))
+
+----
+
+#we check the ACF and PACF of our returns
+fig, axs  = plt.subplots(2,1, figsize = (8,8))
+plot_acf(returns, lags = 25, ax=axs[0])
+axs[0].set_title(f'ACF of ${tickerSymbol} Returns')
+
+plot_pacf(returns, lags = 25, ax=axs[1])
+axs[1].set_title(f'PACF of ${tickerSymbol} Returns')
+plt.tight_layout()
+plt.show();
+
+----
+
+#we check the ACF and PACF of our returns
+fig, axs  = plt.subplots(2,1, figsize = (8,8))
+plot_acf(returns, lags = 25, ax=axs[0])
+axs[0].set_title(f'ACF of ${tickerSymbol} Returns')
+
+plot_pacf(returns, lags = 25, ax=axs[1])
+axs[1].set_title(f'PACF of ${tickerSymbol} Returns')
+plt.tight_layout()
+plt.show();
+
+----
+
+#we check the ACF and PACF of our returns
+fig, axs  = plt.subplots(2,1, figsize = (8,8))
+plot_acf(returns, lags = 25, ax=axs[0])
+axs[0].set_title(f'ACF of ${tickerSymbol} Returns')
+
+plot_pacf(returns, lags = 25, ax=axs[1])
+axs[1].set_title(f'PACF of ${tickerSymbol} Returns')
+plt.tight_layout()
+plt.show();
+
+----
+
+#where our model estimates:
+display(Math(r'\phi = 0.4327,\\ \theta = -0.435'))
+
+----
+
+#we now examine our residuals
+
+ARMA_res = arma_model.fittedvalues - returns
+
+plt.figure(figsize=(10,6))
+plt.plot(ARMA_res, label='Residuals', color='blue', lw=2)
+plt.title(f'Residuals from ARMA({p},{q}) Model for ${tickerSymbol}', fontweight = 'bold')
+plt.xlabel('Time')
+plt.axhline(y=0, color = 'black')
+plt.ylabel(f'error')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+#prima facie, we note there appears to be significant volatility clustering present, 
+#as our data goes from highly volatile to more stable
+
+----
+
+#we seek to fit a GARCH model
+#to do this, we rearrange to our AR(p) representation with the PACF rule of thumb in mind:
+display(Math(r'\epsilon_t = \sigma_t\eta_t\\ \sigma_t^2 = \alpha_0 + \sum_{i=1}^p \beta_i \sigma_{t-i}^2 + \sum_{i=1}^q \alpha_i\epsilon_{t-i}^2  = \alpha_0 + \beta_1\sigma_{t-1}^2 + ... + \beta_p \sigma_{t-p}^2 + \alpha_1 \epsilon_{t-1}^2 + ... + \alpha_q \epsilon_{t-q}^2'))
+
+----
+
+#thus we choose our GARCH model in a similar way to our ARMA process
+#recall significant pacf lag values suggest potential choices for order 'q', however we must balance this with our fitting criteria (AIC, AICc, BIC)
+fig, axs  = plt.subplots(2,1, figsize = (8,8))
+plot_acf(ARMA_res, lags = 25, ax=axs[0])
+axs[0].set_title(f'ACF of ${tickerSymbol} Returns')
+
+plot_pacf(ARMA_res, lags = 25, ax=axs[1])
+axs[1].set_title(f'PACF of ${tickerSymbol} Returns')
+plt.tight_layout()
+plt.show();
+
+----
+
+#if we notice a significant degree of partial autocorrelation is present, and drops off quickly after q lags
+#consequently, we take our past q squared error terms into account (and no more, to ensure simplicity)
+
+display(Math(r'\sigma_t^2 = \alpha_0 + \sum_{i=1}^p \beta_i \sigma_{t-i}^2 + \sum_{j=1}^q \alpha_j\epsilon_{t-j}^2'))
+
+----
+
+#it is again advisable to select simpler models, to avoid overfitting
+#by default, the arch package uses conditional ML to estimate our aparameters
+
+vol_model = arch_model(ARMA_res*100, vol='GARCH', p=1, q=1)
+arch_fit = vol_model.fit(disp = 'off')
+print(arch_fit.summary())
+
+#aside: we can rescale our residuals if necessary for better estimates under ML, given these estimates are based on the distributions of our errors, as opposed to average magnitude 
+
+----
+
+#therefore, conditional ML estimates our coefficients as
+display(Math(r'\alpha_0 = 0.081,\\ \alpha_1 = 0.0572,\\ \beta_1 = 0.9189'))
+
+----
+
+conditional_volatility = arch_fit.conditional_volatility/100
+
+fig, axs = plt.subplots(2, 1, figsize=(12, 8))
+
+# we plot our residuals from the ARMA mean model
+axs[0].plot(ARMA_res, label='Residuals', color='blue')
+axs[0].set_title('Residuals from ARMA Model')
+axs[0].set_xlabel('Time')
+axs[0].set_ylabel('Residuals')
+axs[0].legend()
+axs[0].grid()
+
+# along with conditional volatility (sigma^2)
+axs[1].plot(conditional_volatility, label='Conditional Volatility', color='red')
+axs[1].set_title('Conditional Volatility from GARCH Model')
+axs[1].set_xlabel('Time')
+axs[1].set_ylabel('Volatility')
+axs[1].legend()
+axs[1].grid()
+
+plt.tight_layout()
+plt.show()
+
+----
+
+# as initially noticed, our GARCH model confirms our observed volatility clustering
+# now however, we seek to estimate how well our fitted values from our combined ARMA + GARCH model compare to our price
+# to do this, we take the following approach
+
+----
+
+#recall our structure
+display(Math(r'r_t = \mu_t + \epsilon_t,\\ \mu_t = \phi X_{t-1} + \theta \epsilon_{t-1} \\ \epsilon_t = \sigma_t \eta_t \\ \sigma_t^2 = \alpha_0 + \beta_1 \sigma_{t-1}^2 + \alpha_1\epsilon_{t-1}^2'))
+#if we seek to plot this comparatively to our price data, we can utilise our prior ARIMA(1,1,1)
+
+----
+
+#first we choose a distribution for (assuming normality in this case) and plot eta, our white noise or innovations
+eta = np.random.uniform( -np.sqrt(3),np.sqrt(3), size = len(conditional_volatility))
+print(np.average(eta))
+
+plt.figure(figsize=(10,6))
+plt.plot(eta, label='White Noise', color='grey', lw=2)
+plt.title(f'Normally Distributed white noise, to be used as our Innovations', fontweight = 'bold')
+plt.xlabel('Time')
+plt.axhline(y=0, color = 'black')
+plt.ylabel(f'eta')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+----
+
+#then we combine this with our modelled conditional volatility, and add to our ARIMA framework as explained
+error = eta*conditional_volatility
+ARIMA_ARCH_FIT = arima_model.fittedvalues + error
+
+
+
+#now we plot our results
+
+plt.figure(figsize=(10,6))
+plt.plot(ARMA_res, label='Actual Error', color='black', lw=2)
+plt.plot(error, label='eta*sigma', color='orange', lw=2)
+plt.title(f'Our Modelled Error Process using an GARCH{1,1} model', fontweight = 'bold')
+plt.xlabel('Time')
+plt.axhline(y=0, color = 'black')
+plt.ylabel(f'error')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+plt.figure(figsize=(10,6))
+plt.plot(prices, label='Actual', color='black', lw=2)
+plt.plot(ARIMA_ARCH_FIT[1:], label='Fitted ARIMA + GARCH', color='magenta', lw=2)
+plt.title(f'Actual vs Fitted ARIMA({p},{d},{q}) + GARCH(1,1) Model for ${tickerSymbol}', fontweight = 'bold')
+plt.xlabel('Time')
+plt.ylabel('Price ($)')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+----
+
+#to get a crude estimation of how predictive our model is, we define a backtesting bot to bet when sufficient returns are forecast
+#we use our ARIMA + GARCH fitted values as our predictor, along with our mean ARIMA values as a comparison predictor
+output_array1 = []
+def backtest_bot1(returns_thresh1):
+    #initialize dataframe
+    TRADE_RESULTS1 = pd.DataFrame(
+        {"TRADE" : [],
+         "Date" : [],
+         "Buy Price ($)" : [],
+         "Sell Price ($)" : [],
+         "Predicted Return (%)" : [],
+         "Realised Return (%)" : [],
+         "Trade Profit ($)" : [],
+         "P/L ($)" : []
+        }
+    )
+    total_profit1 = 0
+    no_trades1 = 0
+    #print(f'TRADING STRATEGY: BUY AND SELL FOLLOWING DAY WHEN PREDICTED RETURNS > {returns_thresh*100}% \n----------')
+    for i in range(2, len(ARIMA_ARCH_FIT)-1):
+        #strategy goes here
+        n1 = (ARIMA_ARCH_FIT[i] - ARIMA_ARCH_FIT[i-1])/ARIMA_ARCH_FIT[i-1]
+        if n1 > returns_thresh1:
+            #this executes the trade
+            no_trades1 += 1
+            trade_profit1 = prices[i] - prices[i-1]
+            trade_returns1 = trade_profit1/prices[i-1]
+            total_profit1 += trade_profit1
+            #make a dictionary, for our pandas dataframe to take in
+            trade_dict1 = {
+                "TRADE" : int(no_trades1),
+                "Date" : prices.index[i-1],
+                "Buy Price ($)" : np.round(prices[i-1],2),
+                "Sell Price ($)" : np.round(prices[i],2),
+                "Predicted Return (%)" : np.round(n1*100,2),
+                "Realised Return (%)" : np.round(trade_returns1*100, 2),
+                "Trade Profit ($)" : np.round(trade_profit1,2),
+                "P/L ($)" : np.round(total_profit1,2)
+            }
+            #add the dictionary
+            TRADE_RESULTS1 = pd.concat([TRADE_RESULTS1, pd.DataFrame([trade_dict1])], ignore_index=True)
+    output_array1.append(total_profit1)
+    #format dates for a neater table
+    TRADE_RESULTS1['Date'] = pd.to_datetime(TRADE_RESULTS1['Date'])
+    TRADE_RESULTS1['Date'] = TRADE_RESULTS1['Date'].dt.strftime('%m/%d/%y')
+    print(f'TOTAL PROFIT = ${np.round(total_profit1,2)}')
+    print(tabulate(TRADE_RESULTS1, headers="keys", tablefmt="pretty", showindex=False)) 
+            #print(np.round(returns_thresh, 2))
+            #print(output_array)
+    
+
+backtest_bot1(0.00)    
+    
+output_array2 = []
+def backtest_bot2(returns_thresh2):
+    #initialize dataframe
+    TRADE_RESULTS2 = pd.DataFrame(
+        {"TRADE" : [],
+         "Date" : [],
+         "Buy Price ($)" : [],
+         "Sell Price ($)" : [],
+         "Predicted Return (%)" : [],
+         "Realised Return (%)" : [],
+         "Trade Profit ($)" : [],
+         "P/L ($)" : []
+        }
+    )
+    total_profit2 = 0
+    no_trades2 = 0
+    #print(f'TRADING STRATEGY: BUY AND SELL FOLLOWING DAY WHEN PREDICTED RETURNS > {returns_thresh*100}% \n----------')
+    for i in range(2, len(arima_model.fittedvalues)-1):
+        #strategy goes here
+        n2 = (arima_model.fittedvalues[i] - arima_model.fittedvalues[i-1])/arima_model.fittedvalues[i-1]
+        if n2 > returns_thresh2:
+            #this executes the trade
+            no_trades2 += 1
+            trade_profit2 = prices[i] - prices[i-1]
+            trade_returns2 = trade_profit2/prices[i-1]
+            total_profit2 += trade_profit2
+            #make a dictionary, for our pandas dataframe to take in
+            trade_dict2 = {
+                "TRADE" : int(no_trades2),
+                "Date" : prices.index[i-1],
+                "Buy Price ($)" : np.round(prices[i-1],2),
+                "Sell Price ($)" : np.round(prices[i],2),
+                "Predicted Return (%)" : np.round(n2*100,2),
+                "Realised Return (%)" : np.round(trade_returns2*100, 2),
+                "Trade Profit ($)" : np.round(trade_profit2,2),
+                "P/L ($)" : np.round(total_profit2,2)
+            }
+            #add the dictionary
+            TRADE_RESULTS2 = pd.concat([TRADE_RESULTS2, pd.DataFrame([trade_dict2])], ignore_index=True)
+    output_array2.append(total_profit2)
+    #format dates for a neater table
+    TRADE_RESULTS2['Date'] = pd.to_datetime(TRADE_RESULTS2['Date'])
+    TRADE_RESULTS2['Date'] = TRADE_RESULTS2['Date'].dt.strftime('%m/%d/%y')
+    print(f'TOTAL PROFIT = ${np.round(total_profit2,2)}')
+    print(tabulate(TRADE_RESULTS2, headers="keys", tablefmt="pretty", showindex=False)) 
+            #print(np.round(returns_thresh, 2))
+            #print(output_array) 
+
+backtest_bot2(0)
+#temporarily moved, for MC plot  
+#print our table
+
+#plot our P/L       
+#plt.figure(figsize=(10,6))
+#plt.plot(TRADE_RESULTS["P/L ($)"], label='P/L ($)', color='green', lw=2)
+#plt.title(f"Profit of our Trading Strategy, using ARIMA({p},{d},{q}), Buy Threshold= {returns_thresh*100}%", fontweight = 'bold')
+#plt.xlabel('Trade Number')
+#plt.axhline(y=0, color = 'red')
+#plt.ylabel(f'($)')
+#plt.legend()
+#plt.tight_layout()
+#plt.show()       
+
+----
+
+#mc simulator of different thresholds
+output_array1 = [0]
+output_array2 = [0]
+#step one
+def profit_bot1(sim_input):
+    backtest_bot1(sim_input)
+    return output_array1
+
+def profit_bot2(sim_input):
+    backtest_bot2(sim_input)
+    return output_array2
+
+#step two + three
+sim_num = 100
+thresh_min = 0
+thresh_max = 0.01
+sim_values = np.random.uniform(thresh_min, thresh_max, sim_num)
+MC_sim_results_ARIMA_ARCH = [profit_bot1(returns_thresh) for returns_thresh in sim_values]
+MC_sim_results_ARIMA = [profit_bot2(returns_thresh) for returns_thresh in sim_values]
+
+#step four
+plt.hist(MC_sim_results_ARIMA_ARCH[0], bins=100, color = 'purple')
+plt.xlabel('Total Strategy Profit')
+plt.ylabel('Count')
+plt.axvline(x=prices[-1]-prices[0], color = 'green')
+plt.axvline(x=0)
+plt.axvline(x=prices[0]-prices[-1], color = 'red')
+plt.title(f'ARIMA({p},{d},{q}) + GARCH(1,1) Strategy with Monte Carlo Simulation', weight = 'bold')
+plt.show()
+
+plt.hist(MC_sim_results_ARIMA[0], bins=100, color = 'green')
+plt.xlabel('Total Strategy Profit')
+plt.ylabel('Count')
+plt.axvline(x=prices[-1]-prices[0], color = 'green')
+plt.axvline(x=0)
+plt.axvline(x=prices[0]-prices[-1], color = 'red')
+plt.title(f'ARIMA({p},{d},{q}) Strategy with Monte Carlo Simulation', weight = 'bold')
+plt.show()
+
+----
+
+#we plot both simulated strategies together
+plt.hist(MC_sim_results_ARIMA_ARCH[0], bins=100, color='purple', alpha=0.5, label='ARIMA + GARCH')
+plt.hist(MC_sim_results_ARIMA[0], bins=100, color='green', alpha=0.5, label='ARIMA')
+plt.axvline(x=prices[-1]-prices[0], color='green', linestyle='dashed', linewidth=2, label='Long Position')
+plt.axvline(x=prices[0]-prices[-1], color='red', linestyle='dashed', linewidth=2, label='Short Position')
+plt.legend()
+plt.xlabel('Profit ($)')
+plt.ylabel('Count')
+plt.title(f'Comparison of Strategies with Monte Carlo Simulation', weight='bold')
+plt.show()
+print(f'AVERAGE PROFIT FOR ARIMA STRATEGY = ${np.round(np.average(MC_sim_results_ARIMA[0]),2)}\nAVERAGE PROFIT FOR ARIMA + GARCH STRATEGY = ${np.round(np.average(MC_sim_results_ARIMA_ARCH[0]),2)}')
+
