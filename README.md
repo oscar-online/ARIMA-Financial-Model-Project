@@ -23,6 +23,8 @@ tradebot.py is my project as a py filetype
 
 script contains the raw code from all my work thus far in Python
 
+garch script is a working extension to this
+
 Emissions Vs Pricing VAR.ipynb is an exploratory project into implementing Vector Autoregressive Models to my framework
 
 
