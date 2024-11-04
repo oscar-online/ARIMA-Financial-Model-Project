@@ -16,7 +16,7 @@ At the current stage I have developed a python framework for selecting data, app
 Ahead, the task is to mirror this approach with other mathematical models, and develop the front end.
 
 I have included ipynb and py files, along with a script file (in case of errors displaying my files) to demonstrate the current status of my project.
-
+-------------------------------------------------------------------------------------------------------------------------------------------------------
 **Guide**
 
 TradeBot.ipynb is my central workbook, with ModelSelection.ipynb and StrategyImplementation.ipynb being the first and second sections of this framework.
